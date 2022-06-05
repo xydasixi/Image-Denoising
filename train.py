@@ -1,16 +1,24 @@
 import numpy as np
+import os, glob, datetime, time
 import torch
 import torch.nn as nn
 import torch.nn.init as init
+from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import MultiStepLR
 import data_processing as dp
 
-LR = 0.001
-EPOCH = 180
-SIGMA = 25
-DATA_PATH = 'data/Train400'
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+LR = 0.001
+EPOCH = 5
+SIGMA = 25
+BATCH_SIZE = 128
+DATA_PATH = 'data/Train400'
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+save_dir = os.path.join('models', 'DnCNN'+'_' + 'sigma' + str(SIGMA))
+
+if not os.path.exists(save_dir):
+    os.mkdir(save_dir)
+
 class DnCNN(torch.nn.Module):
     def __init__(self, depth=17, n_channels=64, image_channels=1):
         super(DnCNN, self).__init__()
@@ -28,7 +36,7 @@ class DnCNN(torch.nn.Module):
         self._initialize_weights()
     def forward(self, x):
         y = x
-        out = self.dncnn(x)
+        out = self.network(x)
         return y - out
     def _initialize_weights(self):
         for m in self.modules():
@@ -42,33 +50,29 @@ if __name__ == '__main__':
     model = DnCNN()
     model.train()
     criterion = nn.MSELoss(reduction = 'sum')
-    model = model.to(device)
+    model = model.to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     scheduler = MultiStepLR(optimizer, milestones=[30, 60, 90], gamma=0.2)
     for epoch in range(0, EPOCH):
         scheduler.step(epoch)  # step to the learning rate in this epcoh
-        data,noisy_data = dp.datagenerator(data_path=DATA_PATH, sigma = SIGMA)
-        l = 0
-        # xs = xs.astype('float32')/255.0
-        # xs = torch.from_numpy(xs.transpose((0, 3, 1, 2)))  # tensor of the clean patches, NXCXHXW
-        # DDataset = DenoisingDataset(xs, sigma)
-        # DLoader = DataLoader(dataset=DDataset, num_workers=4, drop_last=True, batch_size=batch_size, shuffle=True)
-        # epoch_loss = 0
-        # start_time = time.time()
-        #
-        # for n_count, batch_yx in enumerate(DLoader):
-        #         optimizer.zero_grad()
-        #         if cuda:
-        #             batch_x, batch_y = batch_yx[1].cuda(), batch_yx[0].cuda()
-        #         loss = criterion(model(batch_y), batch_x)
-        #         epoch_loss += loss.item()
-        #         loss.backward()
-        #         optimizer.step()
-        #         if n_count % 10 == 0:
-        #             print('%4d %4d / %4d loss = %2.4f' % (epoch+1, n_count, xs.size(0)//batch_size, loss.item()/batch_size))
-        # elapsed_time = time.time() - start_time
-        #
-        # log('epcoh = %4d , loss = %4.4f , time = %4.2f s' % (epoch+1, epoch_loss/n_count, elapsed_time))
-        # np.savetxt('train_result.txt', np.hstack((epoch+1, epoch_loss/n_count, elapsed_time)), fmt='%2.4f')
-        # # torch.save(model.state_dict(), os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
-        # torch.save(model, os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
+        data = dp.datagenerator(data_path=DATA_PATH, sigma = SIGMA)
+        data = data.astype('float32')/255.0
+        data = torch.from_numpy(data)  # tensor of the clean patches, NXCXHXW
+        DDataset = dp.GetDataset(data, SIGMA)
+        DLoader = DataLoader(dataset=DDataset, num_workers=4, drop_last=True, batch_size=BATCH_SIZE, shuffle=True)
+        epoch_loss = 0
+        start_time = time.time()
+        for n_count, (y, x) in enumerate(DLoader):
+            batch_x, batch_y = x.to(DEVICE), y.to(DEVICE)
+            optimizer.zero_grad()
+            loss = criterion(model(batch_y), batch_x)
+            epoch_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            if n_count % 10 == 0:
+                print('%4d %4d / %4d loss = %2.4f' % (epoch+1, n_count, data.size(0)//BATCH_SIZE, loss.item()/BATCH_SIZE))
+        elapsed_time = time.time() - start_time
+
+        np.savetxt('results/train_result%03d.txt'% (epoch+1), np.hstack((epoch+1, epoch_loss/n_count, elapsed_time)), fmt='%2.4f')
+        # torch.save(model.state_dict(), os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
+        torch.save(model, os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))

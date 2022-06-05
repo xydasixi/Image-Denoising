@@ -9,23 +9,26 @@ import numpy as np
 
 
 patch_size, stride = 40, 10
+# patch_size, stride = 160, 20
 aug_times = 1
 scales = [1, 0.9, 0.8, 0.7]
 batch_size = 128
 
 
 class GetDataset(Dataset):
-    def __init__(self, data, noisy_data):
-        self.data = data
-        self.noisy_data = noisy_data
+    def __init__(self, xs, sigma):
+        super(GetDataset, self).__init__()
+        self.xs = xs
+        self.sigma = sigma
 
     def __getitem__(self, index):
-        batch_x = self.data[index]
-        batch_y = self.noisy_data[index]
-        return batch_x, batch_y
+        batch_x = self.xs[index]
+        noise = torch.randn(batch_x.size()).mul_(self.sigma / 255.0)
+        batch_y = batch_x + noise
+        return batch_y, batch_x
 
     def __len__(self):
-        return self.data.size(0)  # size(0) 返回当前张量维数的第一维
+        return self.xs.size(0) # size(0) 返回当前张量维数的第一维
 
 
 def data_aug(img, mode=0):
@@ -66,31 +69,19 @@ def gen_patches(file_name):
 
 def datagenerator(data_path, sigma = 15):
     # generate clean patches from a dataset
-    file_list = glob.glob(data_path+'/*.png')  # get name list of all .png files
+    file_list = glob.glob(data_path + '/*.png')  # get name list of all .png files
     # initrialize
     data = []
-    noisy_data=[]
     # generate patches
     for i in range(len(file_list)):
         patches = gen_patches(file_list[i])
         for patch in patches:
-            noisy = Gaussian_noise(sigma, patch)
             data.append(patch)
-            noisy_data.append(noisy)
     data = np.array(data, dtype='uint8')
-    data = np.expand_dims(data, axis=3)
-    discard_n = len(data)-len(data)//batch_size*batch_size
-    # because of batch namalization
+    data = np.expand_dims(data, axis=1)
+    discard_n = len(data) - len(data) // batch_size * batch_size  # because of batch namalization
     data = np.delete(data, range(discard_n), axis=0)
-
-    noisy_data = np.array(noisy_data, dtype='uint8')
-    noisy_data = np.expand_dims(noisy_data, axis=3)
-    discard_n = len(noisy_data) - len(noisy_data) // batch_size * batch_size
-    # because of batch namalization
-    noisy_data = np.delete(noisy_data, range(discard_n), axis=0)
-
-    print('^_^-training data finished-^_^')
-    return data,noisy_data
+    return data
 
 def Gaussian_noise(sigma,image):
     mean = 0
