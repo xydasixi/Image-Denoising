@@ -7,9 +7,9 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import MultiStepLR
 import data_processing as dp
 
-
+DEPTH = 14
 LR = 0.001
-EPOCH = 5
+EPOCH = 10
 SIGMA = 25
 BATCH_SIZE = 128
 DATA_PATH = 'data/Train400'
@@ -20,7 +20,7 @@ if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 
 class DnCNN(torch.nn.Module):
-    def __init__(self, depth=17, n_channels=64, image_channels=1):
+    def __init__(self, depth=DEPTH, n_channels=64, image_channels=1):
         super(DnCNN, self).__init__()
         kernel_size = 3
         padding = 1
@@ -41,7 +41,9 @@ class DnCNN(torch.nn.Module):
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                init.xavier_uniform_(m.weight)
+                init.orthogonal_(m.weight)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm2d):
                 init.constant_(m.weight, 1)
                 init.constant_(m.bias, 0)
@@ -73,6 +75,6 @@ if __name__ == '__main__':
                 print('%4d %4d / %4d loss = %2.4f' % (epoch+1, n_count, data.size(0)//BATCH_SIZE, loss.item()/BATCH_SIZE))
         elapsed_time = time.time() - start_time
 
-        np.savetxt('results/train_result%03d.txt'% (epoch+1), np.hstack((epoch+1, epoch_loss/n_count, elapsed_time)), fmt='%2.4f')
+        np.savetxt('results/train_results/depth_%dtrain_result%03d.txt'% (DEPTH,epoch+1), np.hstack((epoch+1, epoch_loss/n_count, elapsed_time)), fmt='%2.4f')
         # torch.save(model.state_dict(), os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
-        torch.save(model, os.path.join(save_dir, 'model_%03d.pth' % (epoch+1)))
+        torch.save(model, os.path.join(save_dir, 'depth_%dmodel_%03d.pth' % (DEPTH,epoch+1)))
